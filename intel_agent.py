@@ -272,54 +272,48 @@ def condor_get_token():
 
 def condor_sa_flights():
     try:
-        token = condor_get_token()
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
         r = requests.get(
-            f"https://opensky-network.org/api/states/all"
-            f"?lamin={SA_LAT_MIN}&lomin={SA_LON_MIN}"
-            f"&lamax={SA_LAT_MAX}&lomax={SA_LON_MAX}",
-            headers=headers, timeout=15)
-        states = r.json().get('states', [])
-        if not states:
+            'https://data-live.flightradar24.com/zones/fcgi/feed.js',
+            params={'bounds': '-22.0,16.0,-35.0,33.0'},
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=15)
+        data = r.json()
+        aircraft = {k: v for k, v in data.items()
+                   if isinstance(v, list) and len(v) > 10}
+        if not aircraft:
             return "✈️ SA Lugvaart: Geen aktiewe vliegtuie"
-
         critical = []
         warnings = []
-        total = len(states)
-
-        for s in states:
-            if not s:
+        saldanha = []
+        for icao, info in aircraft.items():
+            try:
+                lat = info[1]
+                lon = info[2]
+                callsign = info[13] if info[13] else "Onbekend"
+                squawk = str(info[6]) if info[6] else ""
+                altitude = info[4] if info[4] else 0
+                if squawk == "7500":
+                    critical.append(f"  🔴 KAPING: {callsign}")
+                elif squawk == "7700":
+                    critical.append(f"  🔴 NOODGEVAL: {callsign}")
+                elif squawk == "7600":
+                    warnings.append(f"  🟠 KOMMS VERLIES: {callsign}")
+                if -33.5 <= lat <= -32.5 and 17.5 <= lon <= 18.5:
+                    saldanha.append(f"  🟡 FALA/SALDANHA: {callsign} | Alt: {altitude}ft")
+            except:
                 continue
-            callsign = str(s[1]).strip() if s[1] else "Onbekend"
-            squawk = str(s[14]) if len(s) > 14 and s[14] else ""
-            lat = s[6]
-            lon = s[5]
-            altitude = s[7] or 0
-
-            if squawk == "7500":
-                critical.append(f"  🔴 KAPING: {callsign} | Squawk 7500")
-            elif squawk == "7700":
-                critical.append(f"  🔴 NOODGEVAL: {callsign} | Squawk 7700")
-            elif squawk == "7600":
-                warnings.append(f"  🟠 KOMMS VERLIES: {callsign} | Squawk 7600")
-
-            if lat and lon:
-                if SALDANHA_LAT_MIN <= lat <= SALDANHA_LAT_MAX and \
-                   SALDANHA_LON_MIN <= lon <= SALDANHA_LON_MAX:
-                    warnings.append(f"  🟡 FALA AREA: {callsign} | Alt: {int(altitude)}m")
-
-        lines = [f"✈️ SA Lugvaart: {total} aktiewe vliegtuie"]
+        lines = [f"✈️ SA Lugvaart: {len(aircraft)} aktiewe vliegtuie"]
         if critical:
-            lines.append("🔴 KRITIEKE ALERTS:")
             lines.extend(critical)
         if warnings:
-            lines.append("🟠 WAARSKUWINGS:")
             lines.extend(warnings[:3])
-        if not critical and not warnings:
+        if saldanha:
+            lines.extend(saldanha[:3])
+        if not critical and not warnings and not saldanha:
             lines.append("  ✅ Geen abnormale aktiwiteit")
         return "\n".join(lines)
-    except Exception as e:
-        return f"✈️ Lugvaart data: Onbeskikbaar"
+    except:
+        return "✈️ Lugvaart data: Onbeskikbaar"
 
 def condor_aviation_news():
     try:
